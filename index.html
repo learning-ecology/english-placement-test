@@ -193,6 +193,29 @@
   }
   function esc(s){ return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
 
+  // The CEFR level + per-skill breakdown, computed from the answers. This is
+  // attached to the saved attempt so the OWNER dashboard shows the level too.
+  function buildSummary(correct, detail) {
+    const pct = Math.round(correct / TOTAL * 100);
+    const band = BANDS.find(b => pct >= b.min);
+    const areas = ["Grammar","Vocabulary","Reading","Everyday"].map(A => {
+      const items = detail.filter(d => d.area === A);
+      const c = items.filter(d => d.ok).length;
+      return { area: A, c, n: items.length, pct: items.length ? Math.round(c / items.length * 100) : 0 };
+    });
+    const levels = LEVELS.map(L => {
+      const items = detail.filter(d => d.lvl === L);
+      const c = items.filter(d => d.ok).length;
+      return { lvl: L, c, n: items.length, pct: items.length ? Math.round(c / items.length * 100) : 0 };
+    });
+    return {
+      kind: "cefr",
+      level: band.lvl, level_label: band.lvl === "—" ? "Pre-A1" : band.lvl,
+      level_name: band.name, desc: band.desc, next: band.next,
+      pct, correct, total: TOTAL, areas, levels
+    };
+  }
+
   async function finish() {
     const unanswered = TOTAL - Object.keys(state.answers).length;
     if (unanswered > 0 && !confirm("Bạn còn " + unanswered + " câu chưa trả lời (sẽ tính là sai). Vẫn nộp bài?")) return;
@@ -203,10 +226,12 @@
       return { n, student: stu, correct: item.a, ok, explanation: item.e, area: item.area, lvl: item.lvl };
     });
     const correct = detail.filter(d => d.ok).length;
-    // best-effort: also save to the dashboard IF a student is signed in (server re-scores)
+    const summary = buildSummary(correct, detail);
+    // best-effort: also save to the dashboard IF a student is signed in (server re-scores
+    // and stores this summary so the owner sees the CEFR level, not just the score)
     try { if (window.LMS && LMS.submitTest) {
       const elapsed = Math.round((Date.now() - new Date(state.startedAtISO).getTime()) / 1000);
-      LMS.submitTest(testKey, state.answers, { seconds: elapsed, started: state.startedAtISO });
+      LMS.submitTest(testKey, state.answers, { seconds: elapsed, started: state.startedAtISO, summary });
     } } catch (e) {}
     renderResults(correct, detail);
   }
